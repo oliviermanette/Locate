@@ -24,7 +24,7 @@ unsigned long ulngTime;
 #define SDCARD_SCK_PIN   13  // not actually used
 
 // The file where data is recorded
-File frec;
+File frec,frecL;
 
 // Remember which mode we're doing
 int mode = 0;  // 0=stopped, 1=recording, 2=playin
@@ -73,10 +73,10 @@ void initNewFile()
   char chrFolderName[9];
   String strFolderName = "";
   String strFullFilename="";
-  char chrFullNameL[23];
+  char chrFullNameL[24];
   strFolderName += year();
-  strFolderName+= month();
-  strFolderName+=day();
+  strFolderName += month();
+  strFolderName += day();
   strFolderName.toCharArray(chrFolderName,9);
   if (!SD.exists(chrFolderName)){
     Serial.print("Create folder : ");
@@ -90,9 +90,9 @@ void initNewFile()
   }
   
   strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "_" + second() + ".RAW";
-  strFullFilename.toCharArray(chrFullNameL,23);
+  strFullFilename.toCharArray(chrFullNameL,24);
   Serial.println(chrFullNameL);
-  Serial.println(strFullFilename.length());
+  //Serial.println(strFullFilename.length());
   
   if (SD.exists(chrFullNameL)) {
     // The SD library writes new data to the end of the
@@ -119,15 +119,34 @@ void initNewFile()
     mode = 0;
     Serial.println("The file cannot be created, have to stop recording");
   }
+  
+  strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "_" + second() + "L.RAW";
+  strFullFilename.toCharArray(chrFullNameL,24);
+  frecL = SD.open(chrFullNameL, FILE_WRITE);
+  Serial.println(frec);
+  if (frec) {
+    fileL.begin();
+    fileR.begin();
+    mode = 1;
+    ulngTime = millis();
+    Serial.println("startRecording");
+    Serial.println(chrFullNameL);
+    // 2 : Enregistre le temps top départ
+    Serial.print("Time: ");
+    Serial.println(ulngTime);
+  }
+  else{
+    mode = 0;
+    Serial.println("The file cannot be created, have to stop recording");
+  }
 }
 
 void loop(){
   if (mode == 1){
     if (fileL.available() >= 2){
       if (fileR.available() >= 2){
-        byte bufferL[256];
-        byte bufferR[256];
-        byte buffer[512];
+        byte bufferL[512];
+        byte bufferR[512];
         // Fetch 2 blocks from the audio library and copy
         // into a 512 byte buffer.  The Arduino SD library
         // is most efficient when full 512 byte sector size
@@ -136,13 +155,12 @@ void loop(){
         memcpy(bufferR, fileR.readBuffer(), 256);
         fileL.freeBuffer();
         fileR.freeBuffer();
-        for (int i=0; i<512; i+=4) {
-          buffer[i] = bufferL[i];
-          buffer[i+1] = bufferL[i+1];
-          buffer[i+2] = bufferR[i];
-          buffer[i+3] = bufferR[i+1];
-        }
-        frec.write(buffer, 512);
+        memcpy(bufferR+256, fileR.readBuffer(), 256);
+        memcpy(bufferL+256, fileL.readBuffer(), 256);
+        fileL.freeBuffer();
+        fileR.freeBuffer();
+        frecL.write(bufferR, 512);
+        frec.write(bufferL, 512);
       }
     }
     if ((millis() - ulngTime)>= 30000){
@@ -165,6 +183,7 @@ void stopRecording() {
       fileR.freeBuffer();
     }
     frec.close();
+    frecL.close();
   }
   mode = 0;
 }
