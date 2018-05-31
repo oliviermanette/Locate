@@ -11,37 +11,41 @@ AudioConnection          patchCord1(i2s1, 0, fluxL, 0);
 AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 // GUItool: end automatically generated code
 
-// which input on the audio shield will be used?
 const int myInput = AUDIO_INPUT_LINEIN;
 //Permet de stocker le temps en ms et savoir où on en est.
 unsigned long ulngTime;
 
 void setup() {
-  AudioMemory(52);
-  pinMode(13, OUTPUT);
+  AudioMemory(60);
 
   //Enable the audio shield
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(myInput);
+  sgtl5000_1.volume(0.5);
 
-  fluxL.begin(); // I forgot that shit !
+  fluxL.begin();
   fluxR.begin();
+  Serial.begin(115200);
 }
 
 void loop(){
   int16_t bufferL[128];
   int16_t bufferR[128];
-  int lIntBufferSize = 0;
-  lIntBufferSize = fluxL.available();
-  memcpy(bufferL, fluxL.readBuffer(), lIntBufferSize);
-  memcpy(bufferR, fluxR.readBuffer(), lIntBufferSize);
-  fluxL.freeBuffer();
-  fluxR.freeBuffer();
- 
-  for (int i=0;i<lIntBufferSize;i++){
-    if (bufferR[i]>20000)
-      Serial.println(bufferR[i]);
-    //delay(1);
-  }
+  int lIntBufferSize = fluxL.available();
+  digitalWrite(13,LOW);
+  
+  if (lIntBufferSize>= 2){
+    digitalWrite(13,HIGH);
+    memcpy(bufferL, fluxL.readBuffer(), lIntBufferSize);
+    fluxL.freeBuffer();
+    memcpy(bufferR, fluxR.readBuffer(), lIntBufferSize);
+    fluxR.freeBuffer();
+
+    for (int i=0;i<lIntBufferSize;i++){
+      //if (bufferR[i]>64)
+        Serial.println(bufferL[i]-bufferR[i]);
+      //Serial.println(bufferR[i]);
+    }
+  } 
 }
 
