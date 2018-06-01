@@ -11,15 +11,16 @@ AudioConnection          patchCord1(i2s1, 0, fluxL, 0);
 AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 // GUItool: end automatically generated code
 
-#define GLOBAL_THRESHOLD  200
-#define MAX_TIMESHIFT 50 // shift in ms
-#define MIN_ISI 100//InterSpikeInterval 100 // shift in ms
+#define GLOBAL_THRESHOLD  16
+#define MAX_TIMESHIFT 25 // shift in ms
+#define MIN_ISI 200//InterSpikeInterval 100 // shift in ms
 
 const int myInput = AUDIO_INPUT_LINEIN;
 //Permet de stocker le temps en ms et savoir où on en est.
 unsigned long ulngTime, UlngLastActivated;
 bool gblActivated, gblLeftActivated, gblRightActivated;
 
+unsigned int guintCounter =0; 
 
 void setup() {
   AudioMemory(60);
@@ -39,7 +40,6 @@ void loop(){
   int16_t bufferR[128];
   int lIntBufferSize = fluxL.available();
   
-  
   if (lIntBufferSize>= 2){
     memcpy(bufferL, fluxL.readBuffer(), lIntBufferSize);
     fluxL.freeBuffer();
@@ -48,32 +48,36 @@ void loop(){
 
     for (int i=0;i<lIntBufferSize;i++)
     {
+      guintCounter++;
       if ((bufferR[i]>GLOBAL_THRESHOLD)||(bufferR[i]<GLOBAL_THRESHOLD*-1)){
         if ((!gblActivated)&&(millis()-ulngTime)>MIN_ISI){
           ulngTime = millis();
           gblActivated = true;
           digitalWrite(13,HIGH);
           gblRightActivated = true;
+          guintCounter = 0;
         }
         else if (gblLeftActivated){
           gblActivated = false;
-          Serial.println(millis()-ulngTime);
+          //Serial.println(millis()-ulngTime);
+          Serial.println(guintCounter);
           digitalWrite(13,LOW);
           gblLeftActivated = false;
         }       
       }
-      if (bufferL[i]>GLOBAL_THRESHOLD){
-        
+      if (bufferL[i]>GLOBAL_THRESHOLD){    
         if ((!gblActivated)&&(millis()-ulngTime)>MIN_ISI){
           ulngTime = millis();
           gblActivated = true;
           digitalWrite(13,HIGH);
           gblLeftActivated = true;
+          guintCounter = 0;
         }
         else if (gblRightActivated){
           gblActivated = false;
           Serial.print("-");
-          Serial.println(millis()-ulngTime);
+          //Serial.println(millis()-ulngTime);
+          Serial.println(guintCounter);
           digitalWrite(13,LOW);
           gblRightActivated = false;
         }
@@ -83,6 +87,7 @@ void loop(){
         gblRightActivated = false;
         gblLeftActivated = false; 
         ulngTime = millis();
+        guintCounter = 0;
       }
     }
   } 

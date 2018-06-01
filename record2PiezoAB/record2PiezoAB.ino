@@ -83,33 +83,59 @@ void initNewFile()
     Serial.println(chrFolderName);
     Serial.println(strFolderName);
     SD.mkdir(chrFolderName);  
-    
   }
   else{
     Serial.println("Folder already exists, skip.");
+    Serial.println("");
   }
+    strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "_" + second() + ".dat";
+    strFullFilename.toCharArray(chrFullNameL,24);
+    Serial.println(chrFullNameL);
+    if (SD.exists(chrFullNameL)) {
+      SD.remove(chrFullNameL);
+      Serial.print("This file already exists, it will be replaced by new data : ");
+      Serial.println(chrFullNameL);
+    }
+    //delay(1000);
+    frecL = SD.open(chrFullNameL, FILE_WRITE);
+    
+    Serial.println(frecL);
+    if (frecL) {
+      fileL.begin();
+      //fileR.begin();
+      mode = 1;
+      ulngTime = millis();
+      Serial.print("Recording ");
+      Serial.println(chrFullNameL);
+      // 2 : Enregistre le temps top départ
+      Serial.print("Time: ");
+      Serial.println(ulngTime);
+    }
+    else{
+      mode = 0;
+      Serial.println("The file cannot be created, have to stop recording");
+    }
   
-  strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "_" + second() + ".RAW";
+  
+  strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "r" + second() + ".dat";
   strFullFilename.toCharArray(chrFullNameL,24);
   Serial.println(chrFullNameL);
   //Serial.println(strFullFilename.length());
   
   if (SD.exists(chrFullNameL)) {
-    // The SD library writes new data to the end of the
-    // file, so to start a new recording, the old file
-    // must be deleted before new data is written.
     SD.remove(chrFullNameL);
     Serial.print("This file already exists, it will be replaced by new data : ");
     Serial.println(chrFullNameL);
   }
   frec = SD.open(chrFullNameL, FILE_WRITE);
+  //delay(100);
   Serial.println(frec);
   if (frec) {
-    fileL.begin();
+    //fileL.begin();
     fileR.begin();
     mode = 1;
     ulngTime = millis();
-    Serial.println("startRecording");
+    Serial.print("Recording ");
     Serial.println(chrFullNameL);
     // 2 : Enregistre le temps top départ
     //Serial.print("Time: ");
@@ -119,26 +145,7 @@ void initNewFile()
     mode = 0;
     Serial.println("The file cannot be created, have to stop recording");
   }
-  
-  strFullFilename = strFolderName+ "/" + hour() + "_" + minute() + "_" + second() + "L.RAW";
-  strFullFilename.toCharArray(chrFullNameL,24);
-  frecL = SD.open(chrFullNameL, FILE_WRITE);
-  Serial.println(frec);
-  if (frec) {
-    fileL.begin();
-    fileR.begin();
-    mode = 1;
-    ulngTime = millis();
-    Serial.println("startRecording");
-    Serial.println(chrFullNameL);
-    // 2 : Enregistre le temps top départ
-    Serial.print("Time: ");
-    Serial.println(ulngTime);
-  }
-  else{
-    mode = 0;
-    Serial.println("The file cannot be created, have to stop recording");
-  }
+
 }
 
 void loop(){
