@@ -40,10 +40,10 @@ void loop(){
   int16_t bufferR[128];
   int lIntBufferSize = fluxL.available();
   
-  if (lIntBufferSize>= 2){
-    memcpy(bufferL, fluxL.readBuffer(), lIntBufferSize);
+  if (lIntBufferSize>= 1){
+    memcpy(bufferL, fluxL.readBuffer(), 128);
     fluxL.freeBuffer();
-    memcpy(bufferR, fluxR.readBuffer(), lIntBufferSize);
+    memcpy(bufferR, fluxR.readBuffer(), 128);
     fluxR.freeBuffer();
 
     for (int i=0;i<lIntBufferSize;i++)
