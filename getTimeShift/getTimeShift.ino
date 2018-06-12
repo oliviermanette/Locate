@@ -11,7 +11,9 @@ AudioConnection          patchCord1(i2s1, 0, fluxL, 0);
 AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 // GUItool: end automatically generated code
 
-#define GLOBAL_THRESHOLD  2000
+#define GLOBAL_THRESHOLD  512
+#define HIGH_THRESHOLD 2048
+#define LOW_THRESHOLD 512
 #define MAX_TIMESHIFT 25 // shift in ms
 #define MIN_ISI 200//InterSpikeInterval 100 // shift in ms
 #define BUFFER_SIZE 128
@@ -21,7 +23,7 @@ const int myInput = AUDIO_INPUT_LINEIN;
 unsigned long ulngTime, UlngLastActivated;
 bool gblActivated, gblLeftActivated, gblRightActivated;
 
-unsigned int guintCounter =0; 
+unsigned int guintCounter =0, guintEcart=0; 
 
 void setup() {
   AudioMemory(60);
@@ -39,64 +41,64 @@ void setup() {
 void loop(){
   int16_t bufferL[BUFFER_SIZE];
   int16_t bufferR[BUFFER_SIZE];
-
-  for (int i=0;i<BUFFER_SIZE;i++){
-      bufferR[i]=0;
-      bufferL[i]=0;
-  }
+  int16_t lintSeuil =0;
+  bool lblRightDetected = false, lblLeftDetected = false;
+  gblLeftActivated = false;
+  gblRightActivated = false;
   
-  int lIntBufferSize = fluxL.available();
+  for (int i=0;i<BUFFER_SIZE;i++){
+    bufferR[i]=0;
+    bufferL[i]=0;
+  }
+  int16_t lintMaxL=0, lintMaxR =0;
+  int lIntBufferSize = fluxR.available();
   
   if (lIntBufferSize>= 1){
     memcpy(bufferL, fluxL.readBuffer(), BUFFER_SIZE);
     fluxL.freeBuffer();
     memcpy(bufferR, fluxR.readBuffer(), BUFFER_SIZE);
     fluxR.freeBuffer();
-
-    for (int i=0;i<BUFFER_SIZE;i++)
-    {
+    lintSeuil = HIGH_THRESHOLD;
+    for (int i=0;i<BUFFER_SIZE;i++){
       guintCounter++;
-      if ((bufferR[i]>GLOBAL_THRESHOLD)||(bufferR[i]<GLOBAL_THRESHOLD*-1)){
-        if ((!gblActivated)&&(millis()-ulngTime)>MIN_ISI){
-          ulngTime = millis();
-          gblActivated = true;
-          digitalWrite(13,HIGH);
-          gblRightActivated = true;
-          guintCounter = 0;
-        }
-        else if (gblLeftActivated){
-          gblActivated = false;
-          //Serial.println(millis()-ulngTime);
-          Serial.println(guintCounter);
-          digitalWrite(13,LOW);
-          gblLeftActivated = false;
-        }       
+      if ((bufferR[i]>lintSeuil)&& (gblLeftActivated)){ //2eme pic à droite le gauche est détecté
+        guintEcart = guintCounter;
+        gblRightActivated = true;
+        lintMaxR = bufferR[i];
+        guintCounter = 0;
       }
-      if (bufferL[i]>GLOBAL_THRESHOLD){    
-        if ((!gblActivated)&&(millis()-ulngTime)>MIN_ISI){
-          ulngTime = millis();
-          gblActivated = true;
-          digitalWrite(13,HIGH);
-          gblLeftActivated = true;
-          guintCounter = 0;
-        }
-        else if (gblRightActivated){
-          gblActivated = false;
-          Serial.print("-");
-          //Serial.println(millis()-ulngTime);
-          Serial.println(guintCounter);
-          digitalWrite(13,LOW);
-          gblRightActivated = false;
-        }
+      else if ((bufferR[i]>lintSeuil) && (gblRightActivated == false)){ // 1er pic à droite détecté en premier
+      
+        lintMaxR = bufferR[i];
+        lintSeuil = LOW_THRESHOLD;
+        gblRightActivated = true;
+        guintCounter = 0;
       }
-      if ((gblActivated)&&(millis()-ulngTime)>MAX_TIMESHIFT){
-        gblActivated=false; 
-        gblRightActivated = false;
-        gblLeftActivated = false; 
-        ulngTime = millis();
+      else if ((bufferL[i]>lintSeuil)&& (gblRightActivated)){ // pic à gauche, le droit est détecté
+        guintEcart = guintCounter;
+        lintMaxL = bufferL[i];
+        gblLeftActivated = true;
+        lintSeuil = HIGH_THRESHOLD;
+        guintCounter = 0;
+      }
+      else if ((bufferL[i]>lintSeuil)&& (gblLeftActivated == false)){ // pic à gauche détecté en premier
+        lintMaxL = bufferL[i];
+        gblLeftActivated = true;
+        lintSeuil = LOW_THRESHOLD;
         guintCounter = 0;
       }
     }
-  } 
-}
+    //Serial.print("Max = ");
+    if ((gblRightActivated == gblLeftActivated)&&(gblLeftActivated)){
+      Serial.println("Pic transmis détecté !");
+      Serial.print("Ecart : ");
+      Serial.println(guintEcart);
+      Serial.print("Max Right : ");
+      Serial.println(lintMaxR);
+      Serial.print("Max Left : ");
+      Serial.println(lintMaxL);
+    }
+ 
+  }    
+} 
 
