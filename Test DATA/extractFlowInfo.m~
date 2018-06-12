@@ -26,7 +26,7 @@
 % 
 % - écart relatif de puissance : puissanceL/puissanceR
 %% On commence par lire les fichiers bruts *.DAT et extraire les fréquences
-root = '14_23_24';
+root = '14_22_54';
 DSRate = 2; % Downsampling level
 
 for side=1:2
@@ -174,7 +174,7 @@ end
 % Là une attention particulière car les pics ne sont pas tous détectés par
 % les 2 capteurs. Je dois donc créer une nouvelle matrice qui ne stocke que
 % les pics transmis
-transPeaks =  zeros(24,nbMax);
+transPeaks =  zeros(11,nbMax);
 nbTransPeaks = 0;
 
 for choc1=1:nbChocs(1)
@@ -194,21 +194,15 @@ for choc1=1:nbChocs(1)
             transPeaks(7,nbTransPeaks) = debuts(choc1,1) - debuts(choc2,2);
             % 8 timeShiftMax = zeros(nbMax,1);
             %% ratio durée
-            transPeaks(9,nbTransPeaks) = durees(choc1,1) - durees(choc2,2);
+            transPeaks(9,nbTransPeaks) = durees(choc1,1) / durees(choc2,2);
             %% ratio amplitudes
-            transPeaks(10,nbTransPeaks) = amps(choc1,1) - amps(choc2,2);
+            transPeaks(10,nbTransPeaks) = amps(choc1,1) / amps(choc2,2);
             %% ratio puissances
-            transPeaks(10,nbTransPeaks) = puissances(choc1,1) - amps(choc2,2);
-ratioPuissances = zeros(nbMax,1);
+            transPeaks(11,nbTransPeaks) = puissances(choc1,1) / puissances(choc2,2);
         end
     end
 end
 
-for choc=1:chocsMax
-    ratioDuree(choc) = durees(choc,1)/durees(choc,2);
-    ratioAmps(choc) = amps(choc,1)/amps(choc,2);
-    ratioPuissances(choc) = puissances(choc,1)/puissances(choc,2);
-end
 figure(2)
 clf
 plot(durees(:,1),puissances(:,1),'xr');
@@ -216,3 +210,20 @@ hold on
 plot(durees(:,2),puissances(:,2),'ob');
 % timeShiftOnsets = zeros(nbMax,1);
 % timeShiftMax = zeros(nbMax,1);
+nbTransPeaks
+transPeaks(7,1:nbTransPeaks)
+mean(transPeaks(7,1:nbTransPeaks))
+std(transPeaks(7,1:nbTransPeaks))
+figure(3)
+clf
+plot(transPeaks(7,1:nbTransPeaks),transPeaks(11,1:nbTransPeaks),'xr');
+hold on
+plot(transPeaks(7,1:nbTransPeaks),transPeaks(9,1:nbTransPeaks),'ob');
+%% Réunion des données.
+% Ce tableau est bien mais ce qui serait encore mieux serait de conserver 
+% l'ensemble des éléments. Comment faire ? Le tableau transPeaks propose pour chaque ligne une valeur
+% avant de faire ça, je dois faire tourner le programme et afficher les
+% timeshifts en fonction de la position du choc. Une fois que j'ai bien vu
+% qu'il y avait effectivement un timeshift différent et stable en fonction
+% de la position du coup de marteau. Alors dans ce cas, je pourrais faire à
+% l'envert : 

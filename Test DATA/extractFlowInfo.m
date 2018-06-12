@@ -26,7 +26,7 @@
 % 
 % - écart relatif de puissance : puissanceL/puissanceR
 %% On commence par lire les fichiers bruts *.DAT et extraire les fréquences
-root = '14_22_54';
+root = '14_26_25';
 DSRate = 2; % Downsampling level
 
 for side=1:2
@@ -46,6 +46,7 @@ for side=1:2
     if (side<2)
         sensors = zeros(tpsTotal,2);
     end
+    FsSensors = Fs/DSRate;
     goto = size(B,1);
     for j=1:DSRate:goto % Downsampling 
         sensors(k,side) = mean(B(j:j+DSRate-1));
@@ -73,14 +74,14 @@ seuil = 20000;
 
 ecartMS = 25;
 
-ecartEnBins = ecartMS * Fs /1000;
+ecartEnBins = ecartMS * FsSensors /1000;
 %% 
 % On doit donc prendre aussi comme paramètre la durée maximale d'un choc 
 % si l'écart ne permet pas de les séparer.
 
 dureeMax = 500;
 
-dureeMaxEnBins = dureeMax * Fs / 1000;
+dureeMaxEnBins = dureeMax * FsSensors / 1000;
 %% 
 % On doit stocker dans un tableau la position de tous les début D_L, ainsi 
 % que le nombre pour commencer on en stocke 100 au max.
@@ -179,7 +180,7 @@ nbTransPeaks = 0;
 
 for choc1=1:nbChocs(1)
     for choc2=1:nbChocs(2)
-        if abs(debuts(choc1,1)-debuts(choc2,2))<500
+        if abs(debuts(choc1,1)-debuts(choc2,2))<900
             nbTransPeaks = nbTransPeaks+1;
             %% début
             transPeaks(1,nbTransPeaks) = debuts(choc1,1);
@@ -210,7 +211,7 @@ hold on
 plot(durees(:,2),puissances(:,2),'ob');
 % timeShiftOnsets = zeros(nbMax,1);
 % timeShiftMax = zeros(nbMax,1);
-
+nbTransPeaks
 transPeaks(7,1:nbTransPeaks)
 mean(transPeaks(7,1:nbTransPeaks))
 std(transPeaks(7,1:nbTransPeaks))
@@ -219,3 +220,19 @@ clf
 plot(transPeaks(7,1:nbTransPeaks),transPeaks(11,1:nbTransPeaks),'xr');
 hold on
 plot(transPeaks(7,1:nbTransPeaks),transPeaks(9,1:nbTransPeaks),'ob');
+
+figure(4) % zoom sur les données
+for side=1:2
+    subplot(2,1,side)
+    plot(sensors(min(min(transPeaks(1:2,1:nbTransPeaks))):max(max(transPeaks(3:4,1:nbTransPeaks))),side))
+end
+
+FsSensors
+%% Réunion des données.
+% Ce tableau est bien mais ce qui serait encore mieux serait de conserver 
+% l'ensemble des éléments. Comment faire ? Le tableau transPeaks propose pour chaque ligne une valeur
+% avant de faire ça, je dois faire tourner le programme et afficher les
+% timeshifts en fonction de la position du choc. Une fois que j'ai bien vu
+% qu'il y avait effectivement un timeshift différent et stable en fonction
+% de la position du coup de marteau. Alors dans ce cas, je pourrais faire à
+% l'envert : Que le programme essaye de déterminer la position.

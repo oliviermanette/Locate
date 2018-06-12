@@ -11,9 +11,10 @@ AudioConnection          patchCord1(i2s1, 0, fluxL, 0);
 AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 // GUItool: end automatically generated code
 
-#define GLOBAL_THRESHOLD  16
+#define GLOBAL_THRESHOLD  2000
 #define MAX_TIMESHIFT 25 // shift in ms
 #define MIN_ISI 200//InterSpikeInterval 100 // shift in ms
+#define BUFFER_SIZE 128
 
 const int myInput = AUDIO_INPUT_LINEIN;
 //Permet de stocker le temps en ms et savoir où on en est.
@@ -28,7 +29,7 @@ void setup() {
   //Enable the audio shield
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(myInput);
-  sgtl5000_1.volume(0.9);
+  sgtl5000_1.volume(1);
 
   fluxL.begin();
   fluxR.begin();
@@ -36,17 +37,23 @@ void setup() {
 }
 
 void loop(){
-  int16_t bufferL[128];
-  int16_t bufferR[128];
+  int16_t bufferL[BUFFER_SIZE];
+  int16_t bufferR[BUFFER_SIZE];
+
+  for (int i=0;i<BUFFER_SIZE;i++){
+      bufferR[i]=0;
+      bufferL[i]=0;
+  }
+  
   int lIntBufferSize = fluxL.available();
   
   if (lIntBufferSize>= 1){
-    memcpy(bufferL, fluxL.readBuffer(), 128);
+    memcpy(bufferL, fluxL.readBuffer(), BUFFER_SIZE);
     fluxL.freeBuffer();
-    memcpy(bufferR, fluxR.readBuffer(), 128);
+    memcpy(bufferR, fluxR.readBuffer(), BUFFER_SIZE);
     fluxR.freeBuffer();
 
-    for (int i=0;i<lIntBufferSize;i++)
+    for (int i=0;i<BUFFER_SIZE;i++)
     {
       guintCounter++;
       if ((bufferR[i]>GLOBAL_THRESHOLD)||(bufferR[i]<GLOBAL_THRESHOLD*-1)){
