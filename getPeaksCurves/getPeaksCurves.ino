@@ -13,7 +13,7 @@ AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 const int myInput = AUDIO_INPUT_LINEIN;
 
 int incomingByte = 0;   // for incoming serial data
-#define BUFFER_SIZE 2048 // 1024 ça fait 8 slides
+#define BUFFER_SIZE 4096 // ça fait 16 slides
 #define LOCAL_BUFFER 256
 #define GLOBAL_THRESHOLD  512
 
@@ -36,7 +36,6 @@ void setup() {
         gblBufferR[i]=0;
         gblBufferL[i]=0;
     }
-  
     fluxL.begin();
     fluxR.begin();
     Serial.begin(115200);
