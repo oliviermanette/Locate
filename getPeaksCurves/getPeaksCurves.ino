@@ -14,7 +14,7 @@ const int myInput = AUDIO_INPUT_LINEIN;
 
 int incomingByte = 0;   // for incoming serial data
 #define BUFFER_SIZE 2048 // 1024 ça fait 8 slides
-#define LOCAL_BUFFER 128
+#define LOCAL_BUFFER 256
 #define GLOBAL_THRESHOLD  512
 
 char gchrNbElements;
@@ -25,7 +25,7 @@ char gChrNbSlide;
 
 void setup() {
     gchrNbElements = 2*BUFFER_SIZE/LOCAL_BUFFER;
-    AudioMemory(60);
+    AudioMemory(256);
     //Enable the audio shield
     sgtl5000_1.enable();
     sgtl5000_1.inputSelect(myInput);
@@ -71,9 +71,8 @@ void loop() {
         if (lIntBufferSize>= 1){
 
           memcpy(bufferL, fluxL.readBuffer(), LOCAL_BUFFER);
-          fluxL.freeBuffer();
-
           memcpy(bufferR, fluxR.readBuffer(), LOCAL_BUFFER);
+          fluxL.freeBuffer();
           fluxR.freeBuffer();
 
           if (gChrNbSlide==0){
