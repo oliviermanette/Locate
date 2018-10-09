@@ -21,10 +21,20 @@ char gchrNbElements;
 
 int16_t gblBufferL[BUFFER_SIZE];
 int16_t gblBufferR[BUFFER_SIZE];
+double gdblMeanR, gdblMeanL, gdblRatioPos, gdlbRatioMax;
+int16_t gIntMaxValR, gIntMaxValL, gintMaxPosR, gintMaxPosL;
 char gChrNbSlide;
 
 void setup() {
     gchrNbElements = 2*BUFFER_SIZE/LOCAL_BUFFER;
+    gdblMeanR = 0;
+    gIntMaxValR= 0;
+    gIntMaxValL= 0;
+    gintMaxPosR= 0;
+    gintMaxPosL= 0;
+    gdblMeanL = 0;
+    gdblRatioPos= 0;
+    gdlbRatioMax= 0;
     AudioMemory(256);
     //Enable the audio shield
     sgtl5000_1.enable();
@@ -64,7 +74,29 @@ void loop() {
                   for (int i=0;i<BUFFER_SIZE;i++){
                     Serial.println(gblBufferL[i]);
                   }
-                }           
+                }
+                else if (incomingByte==77){
+                  Serial.print("Here is the Left peak Mean : ");
+                  Serial.println(gdblMeanL);
+                  Serial.print("Here is the Right peak Mean : ");
+                  Serial.println(gdblMeanR);
+                  Serial.print("Here is the Ratio Mean : ");
+                  Serial.println(gdblMeanR/gdblMeanL);
+
+                  Serial.print("Here is the Left peak Max Value : ");
+                  Serial.println(gIntMaxValL);
+                  Serial.print("Here is the Right peak Max Value : ");
+                  Serial.println(gIntMaxValR);
+                  Serial.print("Here is the Ratio Max Value : ");
+                  Serial.println(gdlbRatioMax);
+ 
+                  Serial.print("Here is the Left peak Max Position : ");
+                  Serial.println(gintMaxPosL);
+                  Serial.print("Here is the Right peak Max Positon : ");
+                  Serial.println(gintMaxPosR);
+                  Serial.print("Here is the Ratio Mean : ");
+                  Serial.println(gdblRatioPos);
+                }     
         }
         int lIntBufferSize = fluxR.available();
         if (lIntBufferSize>= 1){
@@ -75,6 +107,7 @@ void loop() {
           fluxR.freeBuffer();
 
           if (gChrNbSlide==0){
+            
             for (int i=0;i<LOCAL_BUFFER;i++){
               if ((bufferR[i]>GLOBAL_THRESHOLD)||
                   (bufferR[i]<(-1*GLOBAL_THRESHOLD))||
@@ -83,6 +116,15 @@ void loop() {
                 //Sauvegarde
                 gChrNbSlide = 1;
                 Serial.println("Peak détecté");
+                // Reset values for next peak
+                gdblMeanR = 0;
+                gdblMeanL = 0;
+                gIntMaxValR= 0;
+                gIntMaxValL= 0;
+                gintMaxPosR= 0;
+                gintMaxPosL= 0;
+                gdblRatioPos= 0;
+                gdlbRatioMax= 0;
                 break;
               }
             }
@@ -93,7 +135,37 @@ void loop() {
           }
           else if (gChrNbSlide==(gchrNbElements+1)){
             gChrNbSlide = 0;
-          }
+            //C'est fini, on peut travailler sur les données
+            int16_t lintTmpValue;
+            for (int i=0;i<BUFFER_SIZE;i++){
+              if (gblBufferR[i]>=0)
+                lintTmpValue = gblBufferR[i];
+              else
+                lintTmpValue = -1 * gblBufferR[i];
+              gdblMeanR += lintTmpValue;
+
+              if (lintTmpValue>gIntMaxValR){
+                gIntMaxValR = lintTmpValue;
+                gintMaxPosR = i;
+              }
+              
+              if (gblBufferL[i]>=0)
+                lintTmpValue = gblBufferL[i];
+              else
+                lintTmpValue = -1 * gblBufferL[i];
+              if (lintTmpValue>gIntMaxValL){
+                gIntMaxValL = lintTmpValue;
+                gintMaxPosL = i;
+              }
+              
+              gdblMeanL += lintTmpValue;
+            }
+            gdblMeanL /=BUFFER_SIZE;
+            gdblMeanR /=BUFFER_SIZE;
+            gdblRatioPos= (double)gintMaxPosL/(double)gintMaxPosR;
+            gdlbRatioMax= (double)gIntMaxValR/(double)gIntMaxValL;
+           }
+     
              
           if ((gChrNbSlide<(gchrNbElements+1))&&(gChrNbSlide>0)){
             memcpy(gblBufferL+(LOCAL_BUFFER/2)*(gChrNbSlide-1), bufferL, LOCAL_BUFFER);

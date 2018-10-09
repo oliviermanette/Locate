@@ -1,6 +1,6 @@
 %
 %plot(R,'r');hold on;plot(L,'b');
-graphcolor=['k*';'r*';'gx';'bx'];
+graphcolor=['k*';'r*';'g*';'b*'];
 result=zeros(4,1);
 for position=1:4
     position 
@@ -13,6 +13,8 @@ for position=1:4
     figure(1);
     hold on
     plot(rpos,rmean,graphcolor(position,:));
+    ylabel('rmean');
+    xlabel('relative Position');
     %rmax = max(abs(tmpVr))./max(abs(tmpVl))
     result(position) = mean([rpos,rmean]);
 end
