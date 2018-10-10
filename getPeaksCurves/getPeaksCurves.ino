@@ -1,6 +1,7 @@
 #include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <tempunit.h>
 
 // GUItool: begin automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
@@ -21,9 +22,12 @@ char gchrNbElements;
 
 int16_t gblBufferL[BUFFER_SIZE];
 int16_t gblBufferR[BUFFER_SIZE];
-double gdblMeanR, gdblMeanL, gdblRatioPos, gdlbRatioMax;
+float gdblMeanR, gdblMeanL, gdblRatioPos, gdlbRatioMax;
 int16_t gIntMaxValR, gIntMaxValL, gintMaxPosR, gintMaxPosL;
 char gChrNbSlide;
+unsigned int guintNbPeak;
+TempUnit TUPos;
+float lfltValues[9];
 
 void setup() {
     gchrNbElements = 2*BUFFER_SIZE/LOCAL_BUFFER;
@@ -35,6 +39,7 @@ void setup() {
     gdblMeanL = 0;
     gdblRatioPos= 0;
     gdlbRatioMax= 0;
+    guintNbPeak = 0;
     AudioMemory(256);
     //Enable the audio shield
     sgtl5000_1.enable();
@@ -49,6 +54,8 @@ void setup() {
     fluxL.begin();
     fluxR.begin();
     Serial.begin(115200);
+
+    TUPos.setDendriteSize(9);
 }
 
 void loop() {
@@ -68,6 +75,61 @@ void loop() {
                   for (int i=0;i<BUFFER_SIZE;i++){
                     Serial.println(gblBufferR[i]);
                   }
+                }
+                else if (incomingByte==104){
+                  //Display Help message
+                  Serial.println("");
+                  Serial.println("Command List:");
+                  Serial.println("=============");
+                  Serial.println("h: display this help message");
+                  Serial.println("L: display last peak signal from Left sensor");
+                  Serial.println("R: display last peak signal from Right sensor");
+                  Serial.println("M: display calculated information about last peak.");
+                  Serial.println("");
+                  Serial.println("a: Add new TempUnit neuron associated on last peak");
+                  Serial.println("l: Learn last peak on TempUnit neuron");
+                  Serial.println("g: get score of TempUnit neuron on last peak");
+                  Serial.println("");
+                }
+                else if (incomingByte==97){// Add new TempUnit neuron associated on last peak
+                  if (guintNbPeak){
+                    
+                    lfltValues[0] = gdblMeanL;
+                    lfltValues[1] = gdblMeanR;
+                    lfltValues[2] = gdblMeanR/gdblMeanL;
+                    lfltValues[3] = gIntMaxValL;
+                    lfltValues[4] = gIntMaxValR;
+                    lfltValues[5] = gdlbRatioMax;
+                    lfltValues[6] = gintMaxPosL;
+                    lfltValues[7] = gintMaxPosR;
+                    lfltValues[8] = gdblRatioPos;
+                    TUPos.setNewTU(lfltValues);
+                  }
+                  
+                }
+                else if (incomingByte==108){//Learn, Adapt to last peak
+                    lfltValues[0] = gdblMeanL;
+                    lfltValues[1] = gdblMeanR;
+                    lfltValues[2] = gdblMeanR/gdblMeanL;
+                    lfltValues[3] = gIntMaxValL;
+                    lfltValues[4] = gIntMaxValR;
+                    lfltValues[5] = gdlbRatioMax;
+                    lfltValues[6] = gintMaxPosL;
+                    lfltValues[7] = gintMaxPosR;
+                    lfltValues[8] = gdblRatioPos;
+                    TUPos.learnNewVector(lfltValues);
+                }
+                else if (incomingByte==103){//get TempUnit score on last peak
+                    lfltValues[0] = gdblMeanL;
+                    lfltValues[1] = gdblMeanR;
+                    lfltValues[2] = gdblMeanR/gdblMeanL;
+                    lfltValues[3] = gIntMaxValL;
+                    lfltValues[4] = gIntMaxValR;
+                    lfltValues[5] = gdlbRatioMax;
+                    lfltValues[6] = gintMaxPosL;
+                    lfltValues[7] = gintMaxPosR;
+                    lfltValues[8] = gdblRatioPos;
+                    TUPos.getScore(lfltValues);
                 }
                 else if (incomingByte==76){
                   Serial.println("Here is the Left peak ! ");
@@ -116,6 +178,7 @@ void loop() {
                 //Sauvegarde
                 gChrNbSlide = 1;
                 Serial.println("Peak détecté");
+                guintNbPeak++;
                 // Reset values for next peak
                 gdblMeanR = 0;
                 gdblMeanL = 0;
