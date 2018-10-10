@@ -1,7 +1,7 @@
 #include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <tempunit.h>
+#include <tunet.h>
 
 // GUItool: begin automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
@@ -13,7 +13,7 @@ AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 
 const int myInput = AUDIO_INPUT_LINEIN;
 
-int incomingByte = 0;   // for incoming serial data
+char incomingByte = 0;   // for incoming serial data
 #define BUFFER_SIZE 4096 // ça fait 16 slides
 #define LOCAL_BUFFER 256
 #define GLOBAL_THRESHOLD  512
@@ -26,7 +26,7 @@ float gdblMeanR, gdblMeanL, gdblRatioPos, gdlbRatioMax;
 int16_t gIntMaxValR, gIntMaxValL, gintMaxPosR, gintMaxPosL;
 char gChrNbSlide;
 unsigned int guintNbPeak;
-TempUnit TUPos;
+TUNet TUPos;
 float lfltValues[9];
 
 void setup() {
@@ -55,7 +55,7 @@ void setup() {
     fluxR.begin();
     Serial.begin(115200);
 
-    TUPos.setDendriteSize(9);
+    TUPos.setAllNetworkDendriteSize(9);
 }
 
 void loop() {
@@ -86,13 +86,20 @@ void loop() {
                   Serial.println("R: display last peak signal from Right sensor");
                   Serial.println("M: display calculated information about last peak.");
                   Serial.println("");
-                  Serial.println("a: Add new TempUnit neuron associated on last peak");
-                  Serial.println("l: Learn last peak on TempUnit neuron");
-                  Serial.println("g: get score of TempUnit neuron on last peak");
+                  Serial.println("a[0]: Add new TempUnit neuron associated on last peak");
+                  Serial.println("l[0]: Learn last peak on TempUnit neuron");
+                  Serial.println("s[0]: get score of TempUnit neuron i on last peak");
+                  Serial.println("n: Display Network size");
                   Serial.println("");
+                }
+                else if (incomingByte==110){
+                  Serial.println(TUPos.getTUNetSize());
                 }
                 else if (incomingByte==97){// Add new TempUnit neuron associated on last peak
                   if (guintNbPeak){
+                    incomingByte = Serial.read();
+                    Serial.print("Argument :");
+                    Serial.println(incomingByte);
                     
                     lfltValues[0] = gdblMeanL;
                     lfltValues[1] = gdblMeanR;
@@ -108,6 +115,12 @@ void loop() {
                   
                 }
                 else if (incomingByte==108){//Learn, Adapt to last peak
+                    incomingByte = Serial.read();
+                    Serial.print("Argument :");
+                    unsigned int toto = incomingByte-48;
+                    Serial.println(toto);
+                    if (toto>9)
+                      toto=0;
                     lfltValues[0] = gdblMeanL;
                     lfltValues[1] = gdblMeanR;
                     lfltValues[2] = gdblMeanR/gdblMeanL;
@@ -117,9 +130,15 @@ void loop() {
                     lfltValues[6] = gintMaxPosL;
                     lfltValues[7] = gintMaxPosR;
                     lfltValues[8] = gdblRatioPos;
-                    TUPos.learnNewVector(lfltValues);
+                    TUPos.learnNewVector(toto,lfltValues);
                 }
-                else if (incomingByte==103){//get TempUnit score on last peak
+                else if (incomingByte==115){//get TempUnit score on last peak
+                    incomingByte = Serial.read();
+                    Serial.print("Argument :");
+                    unsigned int toto = incomingByte-48;
+                    Serial.println(toto);
+                    if (toto>9)
+                      toto=0;
                     lfltValues[0] = gdblMeanL;
                     lfltValues[1] = gdblMeanR;
                     lfltValues[2] = gdblMeanR/gdblMeanL;
@@ -129,7 +148,7 @@ void loop() {
                     lfltValues[6] = gintMaxPosL;
                     lfltValues[7] = gintMaxPosR;
                     lfltValues[8] = gdblRatioPos;
-                    TUPos.getScore(lfltValues);
+                    TUPos.getScore(toto,lfltValues);
                 }
                 else if (incomingByte==76){
                   Serial.println("Here is the Left peak ! ");
