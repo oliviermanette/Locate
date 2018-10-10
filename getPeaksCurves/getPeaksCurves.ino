@@ -86,21 +86,47 @@ void loop() {
                   Serial.println("R: display last peak signal from Right sensor");
                   Serial.println("M: display calculated information about last peak.");
                   Serial.println("");
-                  Serial.println("a[0]: Add new TempUnit neuron associated on last peak");
+                  Serial.println("a:    Add new TempUnit neuron associated on last peak");
                   Serial.println("l[0]: Learn last peak on TempUnit neuron");
-                  Serial.println("s[0]: get score of TempUnit neuron i on last peak");
-                  Serial.println("n: Display Network size");
+                  Serial.println("s[0]: Display score of TempUnit neuron i on last peak");
+                  Serial.println("n:    Display Network size");
+                  Serial.println("m[0]: Display Vector of Mean values");
+                  Serial.println("w[0]: Display Weight vector");
+                  Serial.println("e[0]: Display std vector");
                   Serial.println("");
+                }
+                else if (incomingByte==109){
+                  incomingByte = Serial.read();
+                  Serial.print("Argument :");
+                  unsigned int toto = incomingByte-48;
+                  Serial.println(toto);
+                  if (toto>9)
+                    toto=0;
+                  TUPos.showDValues(toto);
+                }
+                else if (incomingByte==119){
+                  incomingByte = Serial.read();
+                  Serial.print("Argument :");
+                  unsigned int toto = incomingByte-48;
+                  Serial.println(toto);
+                  if (toto>9)
+                    toto=0;
+                  TUPos.showWeights(toto);
+                }
+                else if (incomingByte==101){
+                  incomingByte = Serial.read();
+                  Serial.print("Argument :");
+                  unsigned int toto = incomingByte-48;
+                  Serial.println(toto);
+                  if (toto>9)
+                    toto=0;
+                  TUPos.showStd(toto);
                 }
                 else if (incomingByte==110){
                   Serial.println(TUPos.getTUNetSize());
                 }
                 else if (incomingByte==97){// Add new TempUnit neuron associated on last peak
                   if (guintNbPeak){
-                    incomingByte = Serial.read();
-                    Serial.print("Argument :");
-                    Serial.println(incomingByte);
-                    
                     lfltValues[0] = gdblMeanL;
                     lfltValues[1] = gdblMeanR;
                     lfltValues[2] = gdblMeanR/gdblMeanL;
@@ -148,7 +174,7 @@ void loop() {
                     lfltValues[6] = gintMaxPosL;
                     lfltValues[7] = gintMaxPosR;
                     lfltValues[8] = gdblRatioPos;
-                    TUPos.getScore(toto,lfltValues);
+                    TUPos.showIndividualScore(toto,lfltValues);
                 }
                 else if (incomingByte==76){
                   Serial.println("Here is the Left peak ! ");
@@ -246,6 +272,17 @@ void loop() {
             gdblMeanR /=BUFFER_SIZE;
             gdblRatioPos= (double)gintMaxPosL/(double)gintMaxPosR;
             gdlbRatioMax= (double)gIntMaxValR/(double)gIntMaxValL;
+
+            lfltValues[0] = gdblMeanL;
+            lfltValues[1] = gdblMeanR;
+            lfltValues[2] = gdblMeanR/gdblMeanL;
+            lfltValues[3] = gIntMaxValL;
+            lfltValues[4] = gIntMaxValR;
+            lfltValues[5] = gdlbRatioMax;
+            lfltValues[6] = gintMaxPosL;
+            lfltValues[7] = gintMaxPosR;
+            lfltValues[8] = gdblRatioPos;
+            Serial.println(TUPos.getWinnerID(lfltValues));
            }
      
              
