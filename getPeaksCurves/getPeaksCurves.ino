@@ -11,12 +11,27 @@ AudioRecordQueue         fluxR;         //xy=650,182
 AudioConnection          patchCord1(i2s1, 0, fluxL, 0);
 AudioConnection          patchCord2(i2s1, 1, fluxR, 0);
 
+
+AudioPlayQueue           queue3;         //xy=198,130
+AudioPlayQueue           queue4;         //xy=200,266
+
+AudioAnalyzeFFT1024       fft1024_L;       //xy=456,131
+AudioAnalyzeFFT1024       fft1024_R;       //xy=476,265
+
+AudioConnection          patchCord3(queue3, fft1024_L);
+AudioConnection          patchCord4(queue4, fft1024_R);
+// GUItool: end automatically generated code
+
+
 const int myInput = AUDIO_INPUT_LINEIN;
 
 char incomingByte = 0;   // for incoming serial data
 #define BUFFER_SIZE 4096 // ça fait 16 slides
 #define LOCAL_BUFFER 256
 #define GLOBAL_THRESHOLD  512
+#define FFT_RESOLUTION 512
+#define DownSamplingRatio 4
+#define DENDRITE_LENGTH 64
 
 char gchrNbElements;
 
@@ -27,7 +42,11 @@ int16_t gIntMaxValR, gIntMaxValL, gintMaxPosR, gintMaxPosL;
 char gChrNbSlide;
 unsigned int guintNbPeak;
 TUNet TUPos;
-float lfltValues[9];
+float lfltValues[DENDRITE_LENGTH];
+
+float gfltFFTR[FFT_RESOLUTION], gfltFFTL[FFT_RESOLUTION];
+float gfltBuffer4FFTR[LOCAL_BUFFER], gfltBuffer4FFTL[LOCAL_BUFFER];
+char gchrDownSamplingPosition;
 
 void setup() {
     gchrNbElements = 2*BUFFER_SIZE/LOCAL_BUFFER;
@@ -55,7 +74,7 @@ void setup() {
     fluxR.begin();
     Serial.begin(115200);
 
-    TUPos.setAllNetworkDendriteSize(9);
+    TUPos.setAllNetworkDendriteSize(DENDRITE_LENGTH);
 }
 
 void loop() {
@@ -85,15 +104,28 @@ void loop() {
                   Serial.println("L: display last peak signal from Left sensor");
                   Serial.println("R: display last peak signal from Right sensor");
                   Serial.println("M: display calculated information about last peak.");
+                  Serial.println("F: display evaluated information about the Strength of the shock");
                   Serial.println("");
                   Serial.println("a:    Add new TempUnit neuron associated on last peak");
                   Serial.println("l[0]: Learn last peak on TempUnit neuron");
+                  Serial.println("-------------------------------------------------------");
                   Serial.println("s[0]: Display score of TempUnit neuron i on last peak");
+                  Serial.println("S:    Display output of all TU neurons");
                   Serial.println("n:    Display Network size");
                   Serial.println("m[0]: Display Vector of Mean values");
                   Serial.println("w[0]: Display Weight vector");
                   Serial.println("e[0]: Display std vector");
-                  Serial.println("");
+                  Serial.println("P:    Display the parameters of all TU neurons");
+                  Serial.println(""); 
+                }
+                else if (incomingByte==80){
+                    TUPos.showAllPoolParameters();
+                }
+                else if (incomingByte==83){
+                    TUPos.showAllPoolScore(lfltValues);
+                }
+                else if (incomingByte==70){
+                    Serial.println((gdblMeanR+gdblMeanL)/2.0);
                 }
                 else if (incomingByte==109){
                   incomingByte = Serial.read();
@@ -127,18 +159,8 @@ void loop() {
                 }
                 else if (incomingByte==97){// Add new TempUnit neuron associated on last peak
                   if (guintNbPeak){
-                    lfltValues[0] = gdblMeanL;
-                    lfltValues[1] = gdblMeanR;
-                    lfltValues[2] = gdblMeanR/gdblMeanL;
-                    lfltValues[3] = gIntMaxValL;
-                    lfltValues[4] = gIntMaxValR;
-                    lfltValues[5] = gdlbRatioMax;
-                    lfltValues[6] = gintMaxPosL;
-                    lfltValues[7] = gintMaxPosR;
-                    lfltValues[8] = gdblRatioPos;
                     TUPos.setNewTU(lfltValues);
                   }
-                  
                 }
                 else if (incomingByte==108){//Learn, Adapt to last peak
                     incomingByte = Serial.read();
@@ -147,15 +169,6 @@ void loop() {
                     Serial.println(toto);
                     if (toto>9)
                       toto=0;
-                    lfltValues[0] = gdblMeanL;
-                    lfltValues[1] = gdblMeanR;
-                    lfltValues[2] = gdblMeanR/gdblMeanL;
-                    lfltValues[3] = gIntMaxValL;
-                    lfltValues[4] = gIntMaxValR;
-                    lfltValues[5] = gdlbRatioMax;
-                    lfltValues[6] = gintMaxPosL;
-                    lfltValues[7] = gintMaxPosR;
-                    lfltValues[8] = gdblRatioPos;
                     TUPos.learnNewVector(toto,lfltValues);
                 }
                 else if (incomingByte==115){//get TempUnit score on last peak
@@ -165,15 +178,6 @@ void loop() {
                     Serial.println(toto);
                     if (toto>9)
                       toto=0;
-                    lfltValues[0] = gdblMeanL;
-                    lfltValues[1] = gdblMeanR;
-                    lfltValues[2] = gdblMeanR/gdblMeanL;
-                    lfltValues[3] = gIntMaxValL;
-                    lfltValues[4] = gIntMaxValR;
-                    lfltValues[5] = gdlbRatioMax;
-                    lfltValues[6] = gintMaxPosL;
-                    lfltValues[7] = gintMaxPosR;
-                    lfltValues[8] = gdblRatioPos;
                     TUPos.showIndividualScore(toto,lfltValues);
                 }
                 else if (incomingByte==76){
@@ -203,16 +207,14 @@ void loop() {
                   Serial.println(gintMaxPosR);
                   Serial.print("Here is the Ratio Mean : ");
                   Serial.println(gdblRatioPos);
-                }     
+                }
         }
         int lIntBufferSize = fluxR.available();
         if (lIntBufferSize>= 1){
-
           memcpy(bufferL, fluxL.readBuffer(), LOCAL_BUFFER);
           memcpy(bufferR, fluxR.readBuffer(), LOCAL_BUFFER);
           fluxL.freeBuffer();
           fluxR.freeBuffer();
-
           if (gChrNbSlide==0){
             
             for (int i=0;i<LOCAL_BUFFER;i++){
@@ -233,6 +235,8 @@ void loop() {
                 gintMaxPosL= 0;
                 gdblRatioPos= 0;
                 gdlbRatioMax= 0;
+
+                gchrDownSamplingPosition = 0;
                 break;
               }
             }
@@ -244,6 +248,25 @@ void loop() {
           else if (gChrNbSlide==(gchrNbElements+1)){
             gChrNbSlide = 0;
             //C'est fini, on peut travailler sur les données
+            for (int i=0;i<FFT_RESOLUTION;i++){
+              gfltFFTL[i] = 0;
+              gfltFFTR[i] = 0;
+            }
+            for (int i=0;i<gchrNbElements;i++){
+              memcpy(queue3.getBuffer(), gblBufferL+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
+              memcpy(queue4.getBuffer(), gblBufferR+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
+              queue3.playBuffer();
+              queue4.playBuffer();
+              delay(12);
+              if (fft1024_L.available()){
+                for (int j=0;j<FFT_RESOLUTION;j++)
+                  gfltFFTL[j] += fft1024_L.read(j);
+              }
+              if (fft1024_R.available()){
+                for (int j=0;j<FFT_RESOLUTION;j++)
+                  gfltFFTR[j] += fft1024_R.read(j);
+              }
+            }
             int16_t lintTmpValue;
             for (int i=0;i<BUFFER_SIZE;i++){
               if (gblBufferR[i]>=0)
@@ -256,7 +279,6 @@ void loop() {
                 gIntMaxValR = lintTmpValue;
                 gintMaxPosR = i;
               }
-              
               if (gblBufferL[i]>=0)
                 lintTmpValue = gblBufferL[i];
               else
@@ -265,7 +287,6 @@ void loop() {
                 gIntMaxValL = lintTmpValue;
                 gintMaxPosL = i;
               }
-              
               gdblMeanL += lintTmpValue;
             }
             gdblMeanL /=BUFFER_SIZE;
@@ -282,10 +303,18 @@ void loop() {
             lfltValues[6] = gintMaxPosL;
             lfltValues[7] = gintMaxPosR;
             lfltValues[8] = gdblRatioPos;
-            Serial.println(TUPos.getWinnerID(lfltValues));
-           }
-     
-             
+            lfltValues[9] = (gdblMeanR+gdblMeanL)/2.0;    
+            {
+              int k=10;
+              for (int j=0;j<27;j++){
+                lfltValues[k] = gfltFFTL[j];
+                k++;
+                lfltValues[k] = gfltFFTR[j];
+                k++;
+              }
+              Serial.println(TUPos.getWinnerID(lfltValues));
+            }
+           }      
           if ((gChrNbSlide<(gchrNbElements+1))&&(gChrNbSlide>0)){
             memcpy(gblBufferL+(LOCAL_BUFFER/2)*(gChrNbSlide-1), bufferL, LOCAL_BUFFER);
             memcpy(gblBufferR+(LOCAL_BUFFER/2)*(gChrNbSlide-1), bufferR, LOCAL_BUFFER);
