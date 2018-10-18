@@ -237,6 +237,8 @@ void loop() {
                 gdlbRatioMax= 0;
 
                 gchrDownSamplingPosition = 0;
+                //Should start the FFT immediately
+                
                 break;
               }
             }
