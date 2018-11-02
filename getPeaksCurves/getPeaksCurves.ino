@@ -1,13 +1,13 @@
 #include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <SD.h>
 #include <tunet.h>
+#include <SD.h>
+#include <arduinoFFT.h>
 
 #define SDCARD_CS_PIN    BUILTIN_SDCARD
 #define SDCARD_MOSI_PIN  11
 #define SDCARD_SCK_PIN   13
-
 // GUItool: begin automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
 AudioInputI2S            i2s1;           //xy=223,143
@@ -28,15 +28,21 @@ AudioConnection          patchCord4(queue4, fft1024_R);
 
 const int myInput = AUDIO_INPUT_LINEIN;
 
-char incomingByte = 0;   // for incoming serial data
 #define BUFFER_SIZE 4096 // ça fait 16 slides
 #define LOCAL_BUFFER 256
 #define GLOBAL_THRESHOLD  512
-#define FFT_RESOLUTION 512
-#define DownSamplingRatio 4
 #define DENDRITE_LENGTH 64
+#define FFT_RESOLUTION 1024
+#define DownSamplingRatio 4
+#define FFTBUFFERLENGTH 1024
+#define SAMPLING_FREQUENCY 11025
 
 char gchrNbElements;
+TUNet TUPos;
+//TUBrain Brain;
+arduinoFFT FFT = arduinoFFT();
+
+bool isSDAvailable;
 
 int16_t gblBufferL[BUFFER_SIZE];
 int16_t gblBufferR[BUFFER_SIZE];
@@ -44,33 +50,624 @@ float gdblMeanR, gdblMeanL, gdblRatioPos, gdlbRatioMax;
 int16_t gIntMaxValR, gIntMaxValL, gintMaxPosR, gintMaxPosL;
 char gChrNbSlide;
 unsigned int guintNbPeak;
-TUNet TUPos;
+
 float lfltValues[DENDRITE_LENGTH];
 
-float gfltFFTR[FFT_RESOLUTION], gfltFFTL[FFT_RESOLUTION];
-float gfltBuffer4FFTR[LOCAL_BUFFER], gfltBuffer4FFTL[LOCAL_BUFFER];
+double gfltFFTR[FFT_RESOLUTION], gfltFFTL[FFT_RESOLUTION];
+double gfltBuffer4FFTR[FFTBUFFERLENGTH], gfltBuffer4FFTL[FFTBUFFERLENGTH];
+double peakR, peakL;
 char gchrDownSamplingPosition;
+File gFile;
+String strLastEvent;
 
-bool isSDAvailable;
-File netFile;
+void parseSerial(bool lblStreamFile){
+  // send data only when you receive data:
+  if (Serial.available() > 0) {
+          // read the incoming byte:
+          char lchrIncomingByte;
+          String strFullName = "save.tun";
+          char chrFullName[9];
+          strFullName.toCharArray(chrFullName,9);
+          if (lblStreamFile){
+            lchrIncomingByte = gFile.read();
+          }
+          else
+            lchrIncomingByte = Serial.read();
 
-void initNewFile(){
-  frecL = SD.open(chrFullNameL, FILE_WRITE);
+          if (lchrIncomingByte==82){
+            Serial.println("Here is the Right peak ! ");
+            for (int i=0;i<BUFFER_SIZE;i++){
+              Serial.println(gblBufferR[i]);
+            }
+          }
+          else if (lchrIncomingByte==104){
+            //Display Help message
+            Serial.println("°_°");
+            Serial.println("TempUnit Hardware Command List:");
+            Serial.println("===============================");
+            Serial.println("h: display this help message");
+            Serial.println("L: display last peak signal from Left sensor");
+            Serial.println("R: display last peak signal from Right sensor");
+            Serial.println("c: display calculated information about last peak.");
+            Serial.println("F: display evaluated information about the strength of the shock");
+            Serial.println("");
+            Serial.println("a:    Add new TempUnit neuron associated on last peak");
+            Serial.println("l[0]: Learn last peak on TempUnit neuron");
+            Serial.println("-------------------------------------------------------");
+            Serial.println("s[0]: Display score of TempUnit neuron i on last peak");
+            Serial.println("S:    Display output of all TU neurons");
+            Serial.println("r:    Display max output of each pool");
+            Serial.println("n:    Display Network size");
+            Serial.println("D[0]: Display DENDRITE_LENGTH of neuron i");///////////
+            Serial.println("m[0]: Display Vector of Mean values");
+            Serial.println("w[0]: Display Weight vector");
+            Serial.println("e[0]: Display std vector");
+            Serial.println("N:    Display the parameters of all the Network");
+            Serial.println("-------------------------------------------------------");
+            Serial.println("P     : Display the number of pools (subnetworks)");
+            Serial.println("p[0]  : Display the size of the pool i");
+            Serial.println("q[0]  : Display the pool #ID of the selected neuron i");
+            Serial.println("-------------------------------------------------------");
+            Serial.println("");
+            Serial.println("-------------------------------------------------------");
+            Serial.println("T[64] : Set the size of the network");
+            Serial.println("t[0]  : Select TempUnit neuron i");
+            Serial.println("Y[0]  : Set the pool #ID of the neuron i");
+            Serial.println("J[64] : Set the length of the Dendrite");
+            Serial.println("d[0]  : Select Synapse lfltPosition j on dendrite");
+            Serial.println("W[1.0]: Set the Weight of the TempUnit i on the synapse j");
+            Serial.println("E[1.0]: Set the Std on the Neuron i and the synapse j");
+            Serial.println("M[0.0]: Set the value of max response on neuron i, synapse j");
+            Serial.println("");
+            Serial.println("i     : Display the selected neuron i");
+            Serial.println("j     : Display the selected synapse j");
+            Serial.println("");
+            Serial.println("v     : Save current netword to SD card");
+            Serial.println("u     : Load network from SD card");
+            Serial.println("|°_°|");
+          }
+          else if (lchrIncomingByte==78){ //Display the parameters of all the Network
+              TUPos.showAllPoolParameters();
+          }
+          else if (lchrIncomingByte==83){ // Display output of all TU neurons"
+              TUPos.showAllPoolScore(lfltValues);
+          }
+          else if (lchrIncomingByte==114){ //Display max output of each pool
+            TUPos.showMaxOfPoolScore(lfltValues);
+          }
+          else if (lchrIncomingByte==87){//Set the Weight of the TempUnit i on the synapse j
+            unsigned int luintNb=0;
+            float lfltPosition=100000;
+            float luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              if (luintNb==6){
+                Serial.println("Error, max value 999'999");
+                break;
+              }
+            }
+            if (luintNb){
+              luinSize /=pow(10,5-luintNb+1);
+              if (lchrIncomingByte==46){
+                if (lblStreamFile)
+                  lchrIncomingByte = gFile.read();
+                else
+                  lchrIncomingByte = Serial.read();
+                lfltPosition = 0.1;
+                while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                  luinSize += (lchrIncomingByte-48)*lfltPosition;
+                  lfltPosition /=10;
+                  if (lblStreamFile)
+                    lchrIncomingByte = gFile.read();
+                  else
+                    lchrIncomingByte = Serial.read();
+                }
+              }
+              Serial.print("Set the weight of the synapse to ");
+              Serial.println(luinSize);
+              TUPos.setWeight(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the desired weight.");
+          }
+          else if(lchrIncomingByte==68){ //Display Dendrite Length
+            unsigned int luintNb=0;
+            float lfltPosition=10;
+            unsigned int luinSize = 0;
+            lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+            }
+            if (luintNb){
+              if (luintNb==1)
+                luinSize /=10;
+              TUPos.showDendriteLength(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the #ID of the requested neuron.");
+
+          }
+          else if (lchrIncomingByte==69){//Set the Std of the TempUnit i on the synapse j
+            unsigned int luintNb=0;
+            float lfltPosition=100000;
+            float luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              if (luintNb==6){
+                Serial.println("Error, max value 999'999");
+                break;
+              }
+            }
+            if (luintNb){
+              luinSize /=pow(10,5-luintNb+1);
+              if (lchrIncomingByte==46){
+                if (lblStreamFile)
+                  lchrIncomingByte = gFile.read();
+                else
+                  lchrIncomingByte = Serial.read();
+                lfltPosition = 0.1;
+                while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                  luinSize += (lchrIncomingByte-48)*lfltPosition;
+                  lfltPosition /=10;
+                  if (lblStreamFile)
+                    lchrIncomingByte = gFile.read();
+                  else
+                    lchrIncomingByte = Serial.read();
+                }
+              }
+
+              Serial.print("Set the std of the synapse to ");
+              Serial.println(luinSize);
+              TUPos.setStd(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the desired std.");
+          }
+          else if (lchrIncomingByte==77){//Set the value of max response on neuron i, synapse j
+            unsigned int luintNb=0;
+            float lfltPosition=100000;
+            float luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              if (luintNb==6){
+                Serial.println("Error, max value 999'999");
+                break;
+              }
+            }
+            if (luintNb){
+              luinSize /=pow(10,5-luintNb+1);
+              if (lchrIncomingByte==46){
+                if (lblStreamFile)
+                  lchrIncomingByte = gFile.read();
+                else
+                  lchrIncomingByte = Serial.read();
+                lfltPosition = 0.1;
+                while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                  luinSize += (lchrIncomingByte-48)*lfltPosition;
+                  lfltPosition /=10;
+                  if (lblStreamFile)
+                    lchrIncomingByte = gFile.read();
+                  else
+                    lchrIncomingByte = Serial.read();
+                }
+              }
+
+              Serial.print("Set the mean of the synapse to ");
+              Serial.println(luinSize);
+              TUPos.setDValue(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the desired mean.");
+          }
+          else if (lchrIncomingByte==84){//T[64] : Set the size of the network
+              unsigned int luintNb=0;
+              float lfltPosition=10;
+              unsigned int luinSize = 0;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                luintNb++;
+                luinSize += (lchrIncomingByte-48)*lfltPosition;
+                lfltPosition /=10;
+                if (lblStreamFile)
+                  lchrIncomingByte = gFile.read();
+                else
+                  lchrIncomingByte = Serial.read();
+              }
+              if (luintNb){
+                if (luintNb==1)
+                  luinSize /=10;
+                Serial.print("Set the size of the network to ");
+                Serial.println(luinSize);
+                TUPos.setNetSize(luinSize);
+              }
+              else
+                Serial.println("Cannot determine the size of the network.");
+          }
+          else if (lchrIncomingByte==70){
+              Serial.println((gdblMeanR+gdblMeanL)/2.0);
+          }
+          else if (lchrIncomingByte==112){
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            unsigned int luintChar = lchrIncomingByte-48;
+            if (luintChar>9)
+              luintChar=0;
+            TUPos.showPoolSize(luintChar);
+          }
+          else if (lchrIncomingByte==113){//q[0]  : Display the pool #ID of the selected neuron i
+              unsigned int luintNb=0;
+              float lfltPosition=10;
+              unsigned int luinSize = 0;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                luintNb++;
+                luinSize += (lchrIncomingByte-48)*lfltPosition;
+                lfltPosition /=10;
+                if (lblStreamFile)
+                  lchrIncomingByte = gFile.read();
+                else
+                  lchrIncomingByte = Serial.read();
+              }
+              if (luintNb){
+                if (luintNb==1)
+                  luinSize /=10;
+                TUPos.showPoolID(luinSize);
+              }
+              else
+                Serial.println("Cannot determine the desired Neuron ID.");
+          }
+          else if (lchrIncomingByte==80){
+            TUPos.showPoolsNumber();
+          }
+          else if (lchrIncomingByte==109){
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            Serial.print("Argument :");
+            unsigned int luintChar = lchrIncomingByte-48;
+            Serial.println(luintChar);
+            if (luintChar>9)
+              luintChar=0;
+            TUPos.showDValues(luintChar);
+          }
+          else if (lchrIncomingByte==119){
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            Serial.print("Argument :");
+            unsigned int luintChar = lchrIncomingByte-48;
+            Serial.println(luintChar);
+            if (luintChar>9)
+              luintChar=0;
+            TUPos.showWeights(luintChar);
+          }
+          else if (lchrIncomingByte==116){//Select TempUnit i
+            unsigned int luintNb=0;
+            float lfltPosition=10;
+            unsigned int luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+            }
+            if (luintNb){
+              if (luintNb==1)
+                luinSize /=10;
+              Serial.print("Select the TempUnit Neuron #");
+              Serial.println(luinSize);
+              TUPos.selectNeuron(luinSize);
+            }
+            else
+              Serial.println("Cannot determine which TempUnit neuron you want");
+          }
+          else if (lchrIncomingByte==100){//Select Synapse j
+            unsigned int luintNb=0;
+            float lfltPosition=10;
+            unsigned int luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+            }
+            if (luintNb){
+              if (luintNb==1)
+                luinSize /=10;
+              Serial.print("Select the Synapse #");
+              Serial.println(luinSize);
+              TUPos.selectSynapse(luinSize);
+            }
+            else
+              Serial.println("Cannot determine which Synapse you want");
+          }
+          else if (lchrIncomingByte==101){
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            Serial.print("Argument :");
+            unsigned int luintChar = lchrIncomingByte-48;
+            Serial.println(luintChar);
+            if (luintChar>9)
+              luintChar=0;
+            TUPos.showStd(luintChar);
+          }
+          else if (lchrIncomingByte==110){
+            Serial.println(TUPos.getTUNetSize());
+          }
+          else if (lchrIncomingByte==97){// Add new TempUnit neuron associated on last peak
+            if (guintNbPeak){
+              TUPos.setNewTU(lfltValues);
+            }
+          }
+          else if (lchrIncomingByte==108){//Learn, Adapt to last peak
+              unsigned int luintNb=0;
+              float lfltPosition=10;
+              unsigned char lchrNeuronID = 0;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+                while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+                  luintNb++;
+                  lchrNeuronID += (lchrIncomingByte-48)*lfltPosition;
+                  lfltPosition /=10;
+                  if (lblStreamFile)
+                    lchrIncomingByte = gFile.read();
+                  else
+                    lchrIncomingByte = Serial.read();
+                }
+                if (luintNb){
+                  if (luintNb==1)
+                    lchrNeuronID /=10;
+                  Serial.print("Learn the Neuron #");
+                  Serial.println(lchrNeuronID);
+                  String lstrDest = TUPos.getNetID();
+                  lstrDest += "/";
+                  lstrDest += lchrNeuronID;
+                  lstrDest += strLastEvent.substring(strLastEvent.lastIndexOf("/"));
+
+                  moveFile(strLastEvent,lstrDest);
+                  TUPos.learnNewVector(lchrNeuronID,lfltValues);
+                }
+                else
+                  Serial.println("Cannot determine which neuron you want");
+
+          }
+          else if (lchrIncomingByte==105){
+            TUPos.showSelectedNeuron();
+          }
+          else if (lchrIncomingByte==106){
+            TUPos.showSelectedSynapse();
+          }
+          else if (lchrIncomingByte==118){ //Save current netword to SD card
+            saveNetwork2File();
+          }
+          else if (lchrIncomingByte==117){ //Load network from SD card
+            gFile = SD.open(chrFullName, FILE_READ);
+            do {
+              parseSerial(true);
+            } while (gFile.available());
+            gFile.close();
+          }
+          else if (lchrIncomingByte==89){ //Y[0]  : Set the pool #ID of the neuron i
+            unsigned int luintNb=0;
+            float lfltPosition=10;
+            unsigned int luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+            }
+            if (luintNb){
+              if (luintNb==1)
+                luinSize /=10;
+              Serial.print("Assign the current neuron to the pool #");
+              Serial.println(luinSize);
+              TUPos.setPoolID(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the length of the dendrite.");
+          }
+          else if (lchrIncomingByte==74){ //Set the length of the Dendrite
+            unsigned int luintNb=0;
+            float lfltPosition=10;
+            unsigned int luinSize = 0;
+            if (lblStreamFile)
+              lchrIncomingByte = gFile.read();
+            else
+              lchrIncomingByte = Serial.read();
+            while ((lchrIncomingByte>=48)&(lchrIncomingByte<=57)) {
+              luintNb++;
+
+              luinSize += (lchrIncomingByte-48)*lfltPosition;
+              lfltPosition /=10;
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+            }
+            if (luintNb){
+              if (luintNb==1)
+                luinSize /=10;
+              Serial.print("Set the size of the network to ");
+              Serial.println(luinSize);
+              TUPos.setDendriteSize(luinSize);
+            }
+            else
+              Serial.println("Cannot determine the length of the dendrite.");
+          }
+          else if (lchrIncomingByte==115){//get TempUnit score on last peak
+              if (lblStreamFile)
+                lchrIncomingByte = gFile.read();
+              else
+                lchrIncomingByte = Serial.read();
+              Serial.print("Argument :");
+              unsigned int luintChar = lchrIncomingByte-48;
+              Serial.println(luintChar);
+              if (luintChar>9)
+                luintChar=0;
+              TUPos.showIndividualScore(luintChar,lfltValues);
+          }
+          else if (lchrIncomingByte==76){
+            Serial.println("Here is the Left peak ! ");
+            for (int i=0;i<BUFFER_SIZE;i++){
+              Serial.println(gblBufferL[i]);
+            }
+          }
+          else if (lchrIncomingByte==99){
+            Serial.print("Here is the Left peak Mean : ");
+            Serial.println(gdblMeanL);
+            Serial.print("Here is the Right peak Mean : ");
+            Serial.println(gdblMeanR);
+            Serial.print("Here is the Ratio Mean : ");
+            Serial.println(gdblMeanR/gdblMeanL);
+
+            Serial.print("Here is the Left peak Max Value : ");
+            Serial.println(gIntMaxValL);
+            Serial.print("Here is the Right peak Max Value : ");
+            Serial.println(gIntMaxValR);
+            Serial.print("Here is the Ratio Max Value : ");
+            Serial.println(gdlbRatioMax);
+
+            Serial.print("Here is the Left peak Max Position : ");
+            Serial.println(gintMaxPosL);
+            Serial.print("Here is the Right peak Max Positon : ");
+            Serial.println(gintMaxPosR);
+            Serial.print("Here is the Ratio Mean : ");
+            Serial.println(gdblRatioPos);
+          }
+  }
+}
+
+void saveNetwork2File( ){
+  File netFile;
+  String strFullName = "save.tun";
+  char chrFullName[9];
+  strFullName.toCharArray(chrFullName,9);
+  if (SD.exists(chrFullName)) {
+    SD.remove(chrFullName);
+    Serial.print("This file already exists, it will be replaced by new data : ");
+    Serial.println(chrFullName);
+  }
+  netFile = SD.open(chrFullName, FILE_WRITE);
+  netFile.print("T");
+  unsigned char luchrNetSize = TUPos.getTUNetSize();
+  netFile.println(luchrNetSize);
+
+  for (unsigned char i=0;i<luchrNetSize;i++){
+    netFile.print("t");
+    netFile.println(i);
+    TUPos.selectNeuron(i);
+    netFile.print("J");
+    unsigned char lintDL = TUPos.getDendriteSize(i);
+    netFile.println(lintDL);
+    // pool ID
+    netFile.print("Y");
+    netFile.println(TUPos.getPoolID(i));
+
+    for (int j=0;j<lintDL;j++){
+      netFile.print("d");
+      netFile.println(j);
+      TUPos.selectSynapse(j);
+      netFile.print("W");
+      netFile.println(TUPos.getWeight());
+      netFile.print("E");
+      netFile.println(TUPos.getStd());
+      netFile.print("M");
+      netFile.println(TUPos.getDValue());
+    }
+  }
+  netFile.close();
 }
 
 void setup() {
-    // Initialize the SD card
-    SPI.setMOSI(SDCARD_MOSI_PIN);
-    SPI.setSCK(SDCARD_SCK_PIN);
-    isSDAvailable =false;
-    if (!(SD.begin(SDCARD_CS_PIN))) {
-      // stop here if no SD card, but print a message
-      Serial.println("Unable to access the SD card");
-      delay(100);
-    }
-    else
-      isSDAvailable = true;//initNewFile();
+  Serial.begin(115200);
+  Serial.println("°_°");
+  Serial.println("Welcome to TempUnit hardware interface");
+  Serial.println("Type h to display an help message");
+  Serial.println("======================================");
 
+  SPI.setMOSI(SDCARD_MOSI_PIN);
+  SPI.setSCK(SDCARD_SCK_PIN);
+  isSDAvailable =false;
+  if (!(SD.begin(SDCARD_CS_PIN))) {
+    Serial.println("Unable to access the SD card");
+  }
+  else{
+    isSDAvailable = true;
+    Serial.println("SD Ready");
+  }
     gchrNbElements = 2*BUFFER_SIZE/LOCAL_BUFFER;
     gdblMeanR = 0;
     gIntMaxValR= 0;
@@ -85,7 +682,7 @@ void setup() {
     //Enable the audio shield
     sgtl5000_1.enable();
     sgtl5000_1.inputSelect(myInput);
-    sgtl5000_1.volume(1);
+    sgtl5000_1.volume(0.01);
     gChrNbSlide = 0;
 
     for (int i=0;i<BUFFER_SIZE;i++){
@@ -94,11 +691,6 @@ void setup() {
     }
     fluxL.begin();
     fluxR.begin();
-    Serial.begin(115200);
-    Serial.println("°_°");
-    Serial.println("Welcome to TempUnit hardware interface");
-    Serial.println("Type h to display an help message");
-    Serial.println("======================================");
 
     TUPos.setAllNetworkDendriteSize(DENDRITE_LENGTH);
 }
@@ -110,340 +702,8 @@ void loop() {
             bufferL[i]=0;
             bufferR[i]=0;
         }
-        // send data only when you receive data:
-        if (Serial.available() > 0) {
-                // read the incoming byte:
-                incomingByte = Serial.read();
+        parseSerial(0);
 
-                if (incomingByte==82){
-                  Serial.println("Here is the Right peak ! ");
-                  for (int i=0;i<BUFFER_SIZE;i++){
-                    Serial.println(gblBufferR[i]);
-                  }
-                }
-                else if (incomingByte==104){
-                  //Display Help message
-                  Serial.println("°_°");
-                  Serial.println("TempUnit Hardware Command List:");
-                  Serial.println("===============================");
-                  Serial.println("h: display this help message");
-                  Serial.println("L: display last peak signal from Left sensor");
-                  Serial.println("R: display last peak signal from Right sensor");
-                  Serial.println("c: display calculated information about last peak.");
-                  Serial.println("F: display evaluated information about the Strength of the shock");
-                  Serial.println("");
-                  Serial.println("a:    Add new TempUnit neuron associated on last peak");
-                  Serial.println("l[0]: Learn last peak on TempUnit neuron");
-                  Serial.println("-------------------------------------------------------");
-                  Serial.println("s[0]: Display score of TempUnit neuron i on last peak");
-                  Serial.println("S:    Display output of all TU neurons");
-                  Serial.println("n:    Display Network size");
-                  Serial.println("m[0]: Display Vector of Mean values");
-                  Serial.println("w[0]: Display Weight vector");
-                  Serial.println("e[0]: Display std vector");
-                  Serial.println("N:    Display the parameters of all the Network");
-                  Serial.println("-------------------------------------------------------");
-                  Serial.println("P:    Display the number of pools (subnetworks)");
-                  Serial.println("p[0]: Display the size of the pool i");
-                  Serial.println("-------------------------------------------------------");
-                  Serial.println("");
-                  Serial.println("-------------------------------------------------------");
-                  Serial.println("T[64] : Set the size of the network");
-                  Serial.println("t[0]  : Select TempUnit i");
-                  Serial.println("d[0]  : Select Synapse position j on dendrite");
-                  Serial.println("W[1.0]: Set the Weight of the TempUnit i on the synapse j");
-                  Serial.println("E[1.0]: Set the Std on the Neuron i and the synapse j");
-                  Serial.println("M[0.0]: Set the value of max response on neuron i, synapse j");
-                  Serial.println("");
-                  Serial.println("i     : Display the selected neuron i");
-                  Serial.println("j     : Display the selected synapse j");
-                  Serial.println("");
-                  Serial.println("v     : Save current netword to SD card");
-                  Serial.println("l     : Load network from SD card");
-                  Serial.println("°_°");
-                }
-                else if (incomingByte==78){ //Display the parameters of all the Network
-                    TUPos.showAllPoolParameters();
-                }
-                else if (incomingByte==83){ // Display output of all TU neurons"
-                    TUPos.showAllPoolScore(lfltValues);
-                }
-                else if (incomingByte==87){//Set the Weight of the TempUnit i on the synapse j
-                  unsigned int nb=0;
-                  float position=100000;
-                  float luinSize = 0;
-                  incomingByte = Serial.read();
-                  while ((incomingByte>=48)&(incomingByte<=57)) {
-                    nb++;
-                    luinSize += (incomingByte-48)*position;
-                    position /=10;
-                    incomingByte = Serial.read();
-                    if (nb==6){
-                      Serial.println("Error, max value 999'999");
-                      break;
-                    }
-                  }
-                  if (nb){
-                    luinSize /=pow(10,5-nb+1);
-                    if (incomingByte==46){
-                      incomingByte = Serial.read();
-                      position = 0.1;
-                      while ((incomingByte>=48)&(incomingByte<=57)) {
-                        luinSize += (incomingByte-48)*position;
-                        position /=10;
-                        incomingByte = Serial.read();
-                      }
-                    }
-
-                    Serial.print("Set the weight of the synapse to ");
-                    Serial.println(luinSize);
-                    TUPos.setWeight(luinSize);
-                  }
-                  else
-                    Serial.println("Cannot determine the desired weight.");
-                }
-                else if (incomingByte==69){//Set the Std of the TempUnit i on the synapse j
-                  unsigned int nb=0;
-                  float position=100000;
-                  float luinSize = 0;
-                  incomingByte = Serial.read();
-                  while ((incomingByte>=48)&(incomingByte<=57)) {
-                    nb++;
-                    luinSize += (incomingByte-48)*position;
-                    position /=10;
-                    incomingByte = Serial.read();
-                    if (nb==6){
-                      Serial.println("Error, max value 999'999");
-                      break;
-                    }
-                  }
-                  if (nb){
-                    luinSize /=pow(10,5-nb+1);
-                    if (incomingByte==46){
-                      incomingByte = Serial.read();
-                      position = 0.1;
-                      while ((incomingByte>=48)&(incomingByte<=57)) {
-                        luinSize += (incomingByte-48)*position;
-                        position /=10;
-                        incomingByte = Serial.read();
-                      }
-                    }
-
-                    Serial.print("Set the std of the synapse to ");
-                    Serial.println(luinSize);
-                    TUPos.setStd(luinSize);
-                  }
-                  else
-                    Serial.println("Cannot determine the desired std.");
-                }
-                else if (incomingByte==77){//Set the value of max response on neuron i, synapse j
-                  unsigned int nb=0;
-                  float position=100000;
-                  float luinSize = 0;
-                  incomingByte = Serial.read();
-                  while ((incomingByte>=48)&(incomingByte<=57)) {
-                    nb++;
-                    luinSize += (incomingByte-48)*position;
-                    position /=10;
-                    incomingByte = Serial.read();
-                    if (nb==6){
-                      Serial.println("Error, max value 999'999");
-                      break;
-                    }
-                  }
-                  if (nb){
-                    luinSize /=pow(10,5-nb+1);
-                    if (incomingByte==46){
-                      incomingByte = Serial.read();
-                      position = 0.1;
-                      while ((incomingByte>=48)&(incomingByte<=57)) {
-                        luinSize += (incomingByte-48)*position;
-                        position /=10;
-                        incomingByte = Serial.read();
-                      }
-                    }
-
-                    Serial.print("Set the mean of the synapse to ");
-                    Serial.println(luinSize);
-                    TUPos.setDValue(luinSize);
-                  }
-                  else
-                    Serial.println("Cannot determine the desired mean.");
-                }
-                else if (incomingByte==84){//T[64] : Set the size of the network
-                    unsigned int nb=0;
-                    float position=10;
-                    unsigned int luinSize = 0;
-                    incomingByte = Serial.read();
-                    while ((incomingByte>=48)&(incomingByte<=57)) {
-                      nb++;
-                      Serial.println(nb);
-                      luinSize += (incomingByte-48)*position;
-                      position /=10;
-                      incomingByte = Serial.read();
-                    }
-                    if (nb){
-                      if (nb==1)
-                        luinSize /=10;
-                      Serial.print("Set the size of the network to ");
-                      Serial.println(luinSize);
-                      TUPos.setNetSize(luinSize);
-                    }
-                    else
-                      Serial.println("Cannot determine the size of the network.");
-                }
-                else if (incomingByte==70){
-                    Serial.println((gdblMeanR+gdblMeanL)/2.0);
-                }
-                else if (incomingByte==112){
-                  incomingByte = Serial.read();
-                  unsigned int toto = incomingByte-48;
-                  if (toto>9)
-                    toto=0;
-                  TUPos.showPoolSize(toto);
-                }
-                else if (incomingByte==80){
-                  TUPos.showPoolsNumber();
-                }
-                else if (incomingByte==109){
-                  incomingByte = Serial.read();
-                  Serial.print("Argument :");
-                  unsigned int toto = incomingByte-48;
-                  Serial.println(toto);
-                  if (toto>9)
-                    toto=0;
-                  TUPos.showDValues(toto);
-                }
-                else if (incomingByte==119){
-                  incomingByte = Serial.read();
-                  Serial.print("Argument :");
-                  unsigned int toto = incomingByte-48;
-                  Serial.println(toto);
-                  if (toto>9)
-                    toto=0;
-                  TUPos.showWeights(toto);
-                }
-                else if (incomingByte==116){//Select TempUnit i
-                  unsigned int nb=0;
-                  float position=10;
-                  unsigned int luinSize = 0;
-                  incomingByte = Serial.read();
-                  while ((incomingByte>=48)&(incomingByte<=57)) {
-                    nb++;
-                    Serial.println(nb);
-                    luinSize += (incomingByte-48)*position;
-                    position /=10;
-                    incomingByte = Serial.read();
-                  }
-                  if (nb){
-                    if (nb==1)
-                      luinSize /=10;
-                    Serial.print("Select the TempUnit Neuron #");
-                    Serial.println(luinSize);
-                    TUPos.selectNeuron(luinSize);
-                  }
-                  else
-                    Serial.println("Cannot determine which TempUnit neuron you want");
-                }
-                else if (incomingByte==100){//Select Synapse j
-                  unsigned int nb=0;
-                  float position=10;
-                  unsigned int luinSize = 0;
-                  incomingByte = Serial.read();
-                  while ((incomingByte>=48)&(incomingByte<=57)) {
-                    nb++;
-                    Serial.println(nb);
-                    luinSize += (incomingByte-48)*position;
-                    position /=10;
-                    incomingByte = Serial.read();
-                  }
-                  if (nb){
-                    if (nb==1)
-                      luinSize /=10;
-                    Serial.print("Select the Synapse #");
-                    Serial.println(luinSize);
-                    TUPos.selectSynapse(luinSize);
-                  }
-                  else
-                    Serial.println("Cannot determine which Synapse you want");
-                }
-                else if (incomingByte==101){
-                  incomingByte = Serial.read();
-                  Serial.print("Argument :");
-                  unsigned int toto = incomingByte-48;
-                  Serial.println(toto);
-                  if (toto>9)
-                    toto=0;
-                  TUPos.showStd(toto);
-                }
-                else if (incomingByte==110){
-                  Serial.println(TUPos.getTUNetSize());
-                }
-                else if (incomingByte==97){// Add new TempUnit neuron associated on last peak
-                  if (guintNbPeak){
-                    TUPos.setNewTU(lfltValues);
-                  }
-                }
-                else if (incomingByte==108){//Learn, Adapt to last peak
-                    incomingByte = Serial.read();
-                    Serial.print("Argument :");
-                    unsigned int toto = incomingByte-48;
-                    Serial.println(toto);
-                    if (toto>9)
-                      toto=0;
-                    TUPos.learnNewVector(toto,lfltValues);
-                }
-                else if (incomingByte==105){
-                  TUPos.showSelectedNeuron();
-                }
-                else if (incomingByte==106){
-                  TUPos.showSelectedSynapse();
-                }
-                else if (incomingByte==118){ //Save current netword to SD card
-
-                }
-                else if (incomingByte==108){ //Load network from SD card
-
-
-                }
-                else if (incomingByte==115){//get TempUnit score on last peak
-                    incomingByte = Serial.read();
-                    Serial.print("Argument :");
-                    unsigned int toto = incomingByte-48;
-                    Serial.println(toto);
-                    if (toto>9)
-                      toto=0;
-                    TUPos.showIndividualScore(toto,lfltValues);
-                }
-                else if (incomingByte==76){
-                  Serial.println("Here is the Left peak ! ");
-                  for (int i=0;i<BUFFER_SIZE;i++){
-                    Serial.println(gblBufferL[i]);
-                  }
-                }
-                else if (incomingByte==99){
-                  Serial.print("Here is the Left peak Mean : ");
-                  Serial.println(gdblMeanL);
-                  Serial.print("Here is the Right peak Mean : ");
-                  Serial.println(gdblMeanR);
-                  Serial.print("Here is the Ratio Mean : ");
-                  Serial.println(gdblMeanR/gdblMeanL);
-
-                  Serial.print("Here is the Left peak Max Value : ");
-                  Serial.println(gIntMaxValL);
-                  Serial.print("Here is the Right peak Max Value : ");
-                  Serial.println(gIntMaxValR);
-                  Serial.print("Here is the Ratio Max Value : ");
-                  Serial.println(gdlbRatioMax);
-
-                  Serial.print("Here is the Left peak Max Position : ");
-                  Serial.println(gintMaxPosL);
-                  Serial.print("Here is the Right peak Max Positon : ");
-                  Serial.println(gintMaxPosR);
-                  Serial.print("Here is the Ratio Mean : ");
-                  Serial.println(gdblRatioPos);
-                }
-        }
         int lIntBufferSize = fluxR.available();
         if (lIntBufferSize>= 1){
           memcpy(bufferL, fluxL.readBuffer(), LOCAL_BUFFER);
@@ -451,7 +711,6 @@ void loop() {
           fluxL.freeBuffer();
           fluxR.freeBuffer();
           if (gChrNbSlide==0){
-
             for (int i=0;i<LOCAL_BUFFER;i++){
               if ((bufferR[i]>GLOBAL_THRESHOLD)||
                   (bufferR[i]<(-1*GLOBAL_THRESHOLD))||
@@ -489,21 +748,24 @@ void loop() {
               gfltFFTL[i] = 0;
               gfltFFTR[i] = 0;
             }
-            for (int i=0;i<gchrNbElements;i++){
-              memcpy(queue3.getBuffer(), gblBufferL+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
-              memcpy(queue4.getBuffer(), gblBufferR+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
-              queue3.playBuffer();
-              queue4.playBuffer();
-              delay(12);
-              if (fft1024_L.available()){
-                for (int j=0;j<FFT_RESOLUTION;j++)
-                  gfltFFTL[j] += fft1024_L.read(j);
-              }
-              if (fft1024_R.available()){
-                for (int j=0;j<FFT_RESOLUTION;j++)
-                  gfltFFTR[j] += fft1024_R.read(j);
-              }
-            }
+            // for (int i=0;i<gchrNbElements;i++){
+            //   memcpy(queue3.getBuffer(), gblBufferL+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
+            //   memcpy(queue4.getBuffer(), gblBufferR+(LOCAL_BUFFER/2)*i, LOCAL_BUFFER);
+            //   queue3.playBuffer();
+            //   queue4.playBuffer();
+            //   delay(12);
+            //   if (fft1024_L.available()){
+            //     for (int j=0;j<FFT_RESOLUTION;j++)
+            //       gfltFFTL[j] += fft1024_L.read(j);
+            //   }
+            //   if (fft1024_R.available()){
+            //     for (int j=0;j<FFT_RESOLUTION;j++)
+            //       gfltFFTR[j] += fft1024_R.read(j);
+            //   }
+            // }
+            downSampler();
+            ArFFT();
+
             int16_t lintTmpValue;
             for (int i=0;i<BUFFER_SIZE;i++){
               if (gblBufferR[i]>=0)
@@ -541,15 +803,20 @@ void loop() {
             lfltValues[7] = gintMaxPosR;
             lfltValues[8] = gdblRatioPos;
             lfltValues[9] = (gdblMeanR+gdblMeanL)/2.0;
+            lfltValues[10] = peakL;
+            lfltValues[11] = peakR;
+            lfltValues[12] =peakL/peakR;
             {
-              int k=10;
-              for (int j=0;j<27;j++){
-                lfltValues[k] = gfltFFTL[j];
+              int k=13;
+              for (int j=0;j<25;j++){
+                lfltValues[k] = gfltFFTL[2*j+900];
                 k++;
-                lfltValues[k] = gfltFFTR[j];
+                lfltValues[k] = gfltFFTR[2*j+900];
                 k++;
               }
-              Serial.println(TUPos.getWinnerID(lfltValues));
+              unsigned int result = TUPos.getWinnerID(lfltValues);
+              Serial.println(result);
+              saveEvent(lfltValues,result,TUPos.getDendriteSize(0));
             }
            }
           if ((gChrNbSlide<(gchrNbElements+1))&&(gChrNbSlide>0)){
@@ -558,3 +825,102 @@ void loop() {
           }
         }
 }
+
+bool saveEvent(float fltVector[], unsigned int TUId, unsigned char luchrDendriteLength){
+  //const int lcstintFullName = 16;
+  char chrFolderName[7];
+  char chrTMP[3];
+  String strFullName = TUPos.getNetID();
+  strFullName.toCharArray(chrTMP,3);
+
+  if (!SD.exists(chrTMP)){
+    SD.mkdir(chrTMP);
+    // Serial.print("Create Folder : ");
+    // Serial.println(chrTMP);
+  }
+  strFullName += "/";
+  strFullName += TUId;
+  strFullName.toCharArray(chrFolderName,7);
+  if (!SD.exists(chrFolderName)){
+    SD.mkdir(chrFolderName);
+    // Serial.print("Create Folder : ");
+    // Serial.println(chrFolderName);
+  }
+  strFullName += "/";
+  char lchrToto[5];
+  ltoa(TUPos.getNetTimeStamp(),lchrToto,5);
+  strFullName += lchrToto;
+  strFullName += ".tum";
+  char chrFullName[17];
+  strLastEvent = strFullName;
+  strFullName.toCharArray(chrFullName,17);
+  File lfFile = SD.open(chrFullName, FILE_WRITE);
+  if (!lfFile){
+    // Serial.print("Cannot create the file :");
+    // Serial.println(chrFullName);
+    return false;
+  }
+
+  for (unsigned char i =0; i<luchrDendriteLength; i++){
+    dtostrf(fltVector[i], 15, 2, chrFullName);
+    for (int j=0;j<15-1;j++)
+      lfFile.print(chrFullName[j]);
+    lfFile.println(chrFullName[15-1]);
+  }
+  lfFile.close();
+  return true;
+}
+
+void ArFFT(){
+  double vImag[FFTBUFFERLENGTH];
+  for(int i=0; i<FFTBUFFERLENGTH; i++)
+          vImag[i] = 0;
+  FFT.Windowing(gfltBuffer4FFTR, FFT_RESOLUTION, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(gfltBuffer4FFTR, vImag, FFT_RESOLUTION, FFT_FORWARD);
+  FFT.ComplexToMagnitude(gfltBuffer4FFTR, vImag, FFT_RESOLUTION);
+  peakR = FFT.MajorPeak(gfltBuffer4FFTR, FFT_RESOLUTION, SAMPLING_FREQUENCY);
+  FFT.Windowing(gfltBuffer4FFTL, FFT_RESOLUTION, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(gfltBuffer4FFTL, vImag, FFT_RESOLUTION, FFT_FORWARD);
+  FFT.ComplexToMagnitude(gfltBuffer4FFTL, vImag, FFT_RESOLUTION);
+  peakL = FFT.MajorPeak(gfltBuffer4FFTL, FFT_RESOLUTION, SAMPLING_FREQUENCY);
+  //Serial.println(peak);
+  for (int j=0;j<FFT_RESOLUTION;j++){
+    gfltFFTR[j] = gfltBuffer4FFTR[j];
+    gfltFFTL[j] = gfltBuffer4FFTL[j];
+    //Serial.println(gfltFFTR[j]);
+  }
+}
+
+void downSampler(){
+  for (int i = 0; i < BUFFER_SIZE; i+=DownSamplingRatio) {
+    int j = i/DownSamplingRatio;
+    gfltBuffer4FFTR[j]=0;
+    gfltBuffer4FFTL[j]=0;
+    for (int k = i; k < i+DownSamplingRatio; k++) {
+      gfltBuffer4FFTR[j]+=gblBufferR[k];
+      gfltBuffer4FFTL[j]+=gblBufferL[k];
+    }
+    gfltBuffer4FFTR[j]/=DownSamplingRatio;
+    gfltBuffer4FFTL[j]/=DownSamplingRatio;
+    //Serial.println(gblBufferL[i]);
+  }
+  gfltBuffer4FFTR[FFTBUFFERLENGTH],
+  gfltBuffer4FFTL[FFTBUFFERLENGTH];
+}
+
+void moveFile(String source, String destination) {
+  char chrFullName[17];
+  source.toCharArray(chrFullName,17);
+  if (SD.exists(chrFullName)) {
+    File myFileIn = SD.open(chrFullName, FILE_READ);
+    destination.toCharArray(chrFullName,17);
+    File myFileOut = SD.open(chrFullName, FILE_WRITE);
+    while (myFileIn.available())
+      myFileOut.write(myFileIn.read());
+    myFileIn.close();
+    myFileOut.close();
+    source.toCharArray(chrFullName,17);
+    SD.remove(chrFullName);
+  }
+}
+
